@@ -1,11 +1,22 @@
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+    ConversationHandler,
+)
 
 BOT_TOKEN = os.getenv("BOT-TOKEN")  # Uses the variable from Railway
 DATA_FILE = "streaks.json"
+
+# Conversation state
+WAITING_FOR_DATE = 1
+
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -13,9 +24,11 @@ def load_data():
             return json.load(f)
     return {}
 
+
 def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
 
 async def streak(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Must reply to someone's message
@@ -92,11 +105,96 @@ async def streak(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Total days: {total}"
         )
 
+
+async def set_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Send me the deadline date in this format:\n\n"
+        "<code>YYYY-MM-DD</code>\n\n"
+        "Example: <code>2026-08-20</code>",
+        parse_mode="HTML"
+    )
+    return WAITING_FOR_DATE
+
+
+async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    text = update.message.text.strip()
+
+    try:
+        deadline = datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Wrong format.\nPlease send the date like this:\n<code>2026-08-20</code>",
+            parse_mode="HTML"
+        )
+        return WAITING_FOR_DATE
+
+    data = load_data()
+
+    if user_id not in data:
+        data[user_id] = {
+            "name": update.effective_user.full_name or update.effective_user.username or "Unknown",
+            "last_check": None,
+            "streak": 0,
+            "total_days": 0,
+            "deadline": deadline.isoformat()
+        }
+    else:
+        data[user_id]["deadline"] = deadline.isoformat()
+
+    save_data(data)
+
+    await update.message.reply_text(
+        f"✅ Deadline set for <b>{deadline.strftime('%d %B %Y')}</b>",
+        parse_mode="HTML"
+    )
+    return ConversationHandler.END
+
+
+async def deadline_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    data = load_data()
+
+    user_data = data.get(user_id)
+    if not user_data or "deadline" not in user_data or not user_data["deadline"]:
+        await update.message.reply_text(
+            "You don't have a deadline set yet.\nUse /set to create one."
+        )
+        return
+
+    deadline = date.fromisoformat(user_data["deadline"])
+    await update.message.reply_text(
+        f"Your current deadline is: <b>{deadline.strftime('%d %B %Y')}</b>",
+        parse_mode="HTML"
+    )
+
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Cancelled.")
+    return ConversationHandler.END
+
+
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # Conversation handler for /set
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("set", set_command)],
+        states={
+            WAITING_FOR_DATE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date)
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
     app.add_handler(CommandHandler("streak", streak))
+    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("deadline", deadline_command))
+
     print("Bot is running... Press Ctrl+C to stop")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
