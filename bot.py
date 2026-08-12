@@ -1,5 +1,8 @@
 from telegram.ext import ConversationHandler, MessageHandler, filters
 from datetime import datetime
+# Temporary storage for deadlines
+deadlines = {}  # {user_id: datetime}
+WAITING_FOR_DATE = 1
 import json
 import os
 from datetime import date
