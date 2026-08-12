@@ -4,9 +4,7 @@ from datetime import date
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ← Put your NEW bot token here
-BOT_TOKEN = "8685345832:AAE4hJwpgc7wJiKUCuD6jXkokJzfD5aA9yM"
-
+BOT_TOKEN = os.getenv("BOT-TOKEN")  # Uses the variable from Railway
 DATA_FILE = "streaks.json"
 
 def load_data():
@@ -20,21 +18,36 @@ def save_data(data):
         json.dump(data, f, indent=2)
 
 async def streak(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = str(user.id)
+    # Must reply to someone's message
+    if not update.message.reply_to_message:
+        await update.message.reply_text(
+            "Reply to someone's message and use /streak to give them a streak."
+        )
+        return
+
+    target_user = update.message.reply_to_message.from_user
+    caller = update.effective_user
+
+    # Prevent giving streak to yourself
+    if target_user.id == caller.id:
+        await update.message.reply_text("You can't give a streak to yourself.")
+        return
+
+    user_id = str(target_user.id)
     today = date.today().isoformat()
     data = load_data()
 
     if user_id not in data:
         data[user_id] = {
-            "name": user.full_name or user.username or "Unknown",
+            "name": target_user.full_name or target_user.username or "Unknown",
             "last_check": today,
             "streak": 1,
             "total_days": 1
         }
         save_data(data)
         await update.message.reply_text(
-            f"✅ First day logged!\n Current streak: **1 day**"
+            f"✅ First day logged for {target_user.full_name}!\n"
+            f"Current streak: **1 day**"
         )
         return
 
@@ -49,8 +62,8 @@ async def streak(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if diff == 0:
         await update.message.reply_text(
-            f"Already checked in today.\n"
-            f" Current streak: **{current_streak} day{'s' if current_streak != 1 else ''}**\n"
+            f"{target_user.full_name} already has a check-in today.\n"
+            f"Current streak: **{current_streak} day{'s' if current_streak != 1 else ''}**\n"
             f"Total days: {total}"
         )
     elif diff == 1:
@@ -61,8 +74,8 @@ async def streak(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data["total_days"] = total
         save_data(data)
         await update.message.reply_text(
-            f"✅ Day logged!\n"
-            f" Current streak: **{current_streak} days**\n"
+            f"✅ Day logged for {target_user.full_name}!\n"
+            f"Current streak: **{current_streak} days**\n"
             f"Total days: {total}"
         )
     else:
@@ -73,9 +86,9 @@ async def streak(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data["total_days"] = total
         save_data(data)
         await update.message.reply_text(
-            f"Streak reset (missed {diff-1} day{'s' if diff > 2 else ''}).\n"
+            f"Streak reset for {target_user.full_name} (missed {diff-1} day{'s' if diff > 2 else ''}).\n"
             f"✅ New day logged.\n"
-            f" Current streak: **1 day**\n"
+            f"Current streak: **1 day**\n"
             f"Total days: {total}"
         )
 
