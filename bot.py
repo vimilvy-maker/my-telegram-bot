@@ -186,11 +186,13 @@ def main():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )
 
     app.add_handler(CommandHandler("streak", streak))
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("deadline", deadline_command))
+    app.add_handler(CommandHandler("cancel", cancel))
 
     print("Bot is running... Press Ctrl+C to stop")
     app.run_polling()
